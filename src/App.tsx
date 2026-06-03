@@ -50,7 +50,7 @@ export default function App() {
   const [sendSeq, setSendSeq] = useState<number>(0);
   const [isTransmitting, setIsTransmitting] = useState<boolean>(false);
   const [transmitFps, setTransmitFps] = useState<number>(25);
-  const [selectedBlockSize, setSelectedBlockSize] = useState<number>(1024);
+  const [selectedBlockSize, setSelectedBlockSize] = useState<number>(256);
   const [preRenderingPercent, setPreRenderingPercent] = useState<number>(-1);
 
   // Buffer lists for exporting Animated WebPs
@@ -118,7 +118,15 @@ export default function App() {
         const videoDevices = deviceInfos.filter((d) => d.kind === 'videoinput');
         setDevices(videoDevices);
         if (videoDevices.length > 0) {
-          setSelectedDeviceId(videoDevices[0].deviceId);
+          // Try to find a back/rear camera to default to
+          const backCam = videoDevices.find((d) =>
+            d.label.toLowerCase().includes('back') ||
+            d.label.toLowerCase().includes('rear') ||
+            d.label.toLowerCase().includes('environment') ||
+            d.label.includes('後') ||
+            d.label.includes('主鏡頭')
+          );
+          setSelectedDeviceId(backCam ? backCam.deviceId : videoDevices[0].deviceId);
         }
       } catch (err) {
         console.warn('Could not list video devices:', err);
@@ -448,12 +456,22 @@ export default function App() {
             const b = imgData[idx + 2];
             const a = imgData[idx + 3];
 
+            // Cross-talk compensation (subtract overlapping leakage from other channels)
+            let rClean = r - 0.4 * Math.max(0, g - r) - 0.4 * Math.max(0, b - r);
+            if (rClean < 0) rClean = 0; else if (rClean > 255) rClean = 255;
+
+            let gClean = g - 0.4 * Math.max(0, r - g) - 0.4 * Math.max(0, b - g);
+            if (gClean < 0) gClean = 0; else if (gClean > 255) gClean = 255;
+
+            let bClean = b - 0.4 * Math.max(0, r - b) - 0.4 * Math.max(0, g - b);
+            if (bClean < 0) bClean = 0; else if (bClean > 255) bClean = 255;
+
             // Red Channel Monochromatic map
-            rData[idx] = r; rData[idx+1] = r; rData[idx+2] = r; rData[idx+3] = a;
+            rData[idx] = rClean; rData[idx+1] = rClean; rData[idx+2] = rClean; rData[idx+3] = a;
             // Green Channel Monochromatic map
-            gData[idx] = g; gData[idx+1] = g; gData[idx+2] = g; gData[idx+3] = a;
+            gData[idx] = gClean; gData[idx+1] = gClean; gData[idx+2] = gClean; gData[idx+3] = a;
             // Blue Channel Monochromatic map
-            bData[idx] = b; bData[idx+1] = b; bData[idx+2] = b; bData[idx+3] = a;
+            bData[idx] = bClean; bData[idx+1] = bClean; bData[idx+2] = bClean; bData[idx+3] = a;
           }
 
           const rScan = jsQR(rData, w, h);
@@ -983,8 +1001,16 @@ export default function App() {
 
       const constraints: MediaStreamConstraints = {
         video: selectedDeviceId
-          ? { deviceId: { exact: selectedDeviceId } }
-          : { facingMode: 'environment' },
+          ? {
+              deviceId: { exact: selectedDeviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            }
+          : {
+              facingMode: 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -1126,9 +1152,19 @@ export default function App() {
                 const b = imgData.data[idx + 2];
                 const a = imgData.data[idx + 3];
 
-                rData[idx] = r; rData[idx+1] = r; rData[idx+2] = r; rData[idx+3] = a;
-                gData[idx] = g; gData[idx+1] = g; gData[idx+2] = g; gData[idx+3] = a;
-                bData[idx] = b; bData[idx+1] = b; bData[idx+2] = b; bData[idx+3] = a;
+                // Cross-talk compensation (subtract overlapping leakage from other channels)
+                let rClean = r - 0.4 * Math.max(0, g - r) - 0.4 * Math.max(0, b - r);
+                if (rClean < 0) rClean = 0; else if (rClean > 255) rClean = 255;
+
+                let gClean = g - 0.4 * Math.max(0, r - g) - 0.4 * Math.max(0, b - g);
+                if (gClean < 0) gClean = 0; else if (gClean > 255) gClean = 255;
+
+                let bClean = b - 0.4 * Math.max(0, r - b) - 0.4 * Math.max(0, g - b);
+                if (bClean < 0) bClean = 0; else if (bClean > 255) bClean = 255;
+
+                rData[idx] = rClean; rData[idx+1] = rClean; rData[idx+2] = rClean; rData[idx+3] = a;
+                gData[idx] = gClean; gData[idx+1] = gClean; gData[idx+2] = gClean; gData[idx+3] = a;
+                bData[idx] = bClean; bData[idx+1] = bClean; bData[idx+2] = bClean; bData[idx+3] = a;
               }
 
               // Scan
@@ -1366,7 +1402,7 @@ export default function App() {
                       區塊大小
                     </span>
                     <div className="flex gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
-                      {[512, 1024, 1536].map((size) => (
+                      {[128, 256, 512, 1024, 1536].map((size) => (
                         <button
                           key={size}
                           onClick={() => changeBlockSize(size)}
