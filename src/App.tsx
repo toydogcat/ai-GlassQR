@@ -249,10 +249,10 @@ export default function App() {
     
     // Auto-adjust cellSize so that each cell/module has a larger physical pixel area!
     const dummyPacket = ProtocolService.generatePacket(meta.id, 0, blocks, meta.size, meta.blockSize);
-    const dummyStr = ProtocolService.serializePacket(dummyPacket);
+    const dummyBuf = ProtocolService.serializePacket(dummyPacket);
     let n = 157; // Default fallback module dimension for version 35
     try {
-      const dummyQr = QRCode.create(dummyStr, { version: qrVersion, errorCorrectionLevel: ecc });
+      const dummyQr = QRCode.create([{ data: dummyBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
       n = dummyQr.modules.size;
     } catch (e) {
       console.warn("Failed to derive module size:", e);
@@ -289,21 +289,30 @@ export default function App() {
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
         const bPacket = ProtocolService.generatePacket(meta.id, bSeq, blocks, meta.size, meta.blockSize);
 
-        const rStr = ProtocolService.serializePacket(rPacket);
-        const gStr = ProtocolService.serializePacket(gPacket);
-        const bStr = ProtocolService.serializePacket(bPacket);
+        const rBuf = ProtocolService.serializePacket(rPacket);
+        const gBuf = ProtocolService.serializePacket(gPacket);
+        const bBuf = ProtocolService.serializePacket(bPacket);
 
         try {
-          const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
-          const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
-          const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+
+          const frameN = rQr.modules.size;
+          const frameCellSize = frameN < 50 ? 14 : frameN < 100 ? 10 : 8;
+          const frameSizePx = frameN * frameCellSize + margin * 2;
+
+          if (tempCanvas.width !== frameSizePx) {
+            tempCanvas.width = frameSizePx;
+            tempCanvas.height = frameSizePx;
+          }
 
           // Reset white quiet zone background
           tempCtx.fillStyle = '#ffffff';
-          tempCtx.fillRect(0, 0, sizePx, sizePx);
+          tempCtx.fillRect(0, 0, frameSizePx, frameSizePx);
 
-          for (let y = 0; y < n; y++) {
-            for (let x = 0; x < n; x++) {
+          for (let y = 0; y < frameN; y++) {
+            for (let x = 0; x < frameN; x++) {
               const rBit = rQr.modules.get(x, y);
               const gBit = gQr.modules.get(x, y);
               const bBit = bQr.modules.get(x, y);
@@ -313,11 +322,11 @@ export default function App() {
               const bVal = bBit ? 0 : 255;
 
               tempCtx.fillStyle = `rgb(${rVal}, ${gVal}, ${bVal})`;
-              tempCtx.fillRect(margin + x * cellSize, margin + y * cellSize, cellSize, cellSize);
+              tempCtx.fillRect(margin + x * frameCellSize, margin + y * frameCellSize, frameCellSize, frameCellSize);
             }
           }
 
-          const imageData = tempCtx.getImageData(0, 0, sizePx, sizePx);
+          const imageData = tempCtx.getImageData(0, 0, frameSizePx, frameSizePx);
           cache.push({
             rPacket,
             gPacket,
@@ -363,10 +372,10 @@ export default function App() {
       const ecc = qrConfig.errorCorrectionLevel;
 
       const dummyPacket = ProtocolService.generatePacket(meta.id, 0, blocks, meta.size, meta.blockSize);
-      const dummyStr = ProtocolService.serializePacket(dummyPacket);
+      const dummyBuf = ProtocolService.serializePacket(dummyPacket);
       let n = 157;
       try {
-        const dummyQr = QRCode.create(dummyStr, { version: qrVersion, errorCorrectionLevel: ecc });
+        const dummyQr = QRCode.create([{ data: dummyBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
         n = dummyQr.modules.size;
       } catch (e) {
         console.warn("Failed to derive module size in background:", e);
@@ -404,20 +413,29 @@ export default function App() {
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
         const bPacket = ProtocolService.generatePacket(meta.id, bSeq, blocks, meta.size, meta.blockSize);
 
-        const rStr = ProtocolService.serializePacket(rPacket);
-        const gStr = ProtocolService.serializePacket(gPacket);
-        const bStr = ProtocolService.serializePacket(bPacket);
+        const rBuf = ProtocolService.serializePacket(rPacket);
+        const gBuf = ProtocolService.serializePacket(gPacket);
+        const bBuf = ProtocolService.serializePacket(bPacket);
 
         try {
-          const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
-          const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
-          const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+
+          const frameN = rQr.modules.size;
+          const frameCellSize = frameN < 50 ? 14 : frameN < 100 ? 10 : 8;
+          const frameSizePx = frameN * frameCellSize + margin * 2;
+
+          if (tempCanvas.width !== frameSizePx) {
+            tempCanvas.width = frameSizePx;
+            tempCanvas.height = frameSizePx;
+          }
 
           tempCtx.fillStyle = '#ffffff';
-          tempCtx.fillRect(0, 0, sizePx, sizePx);
+          tempCtx.fillRect(0, 0, frameSizePx, frameSizePx);
 
-          for (let y = 0; y < n; y++) {
-            for (let x = 0; x < n; x++) {
+          for (let y = 0; y < frameN; y++) {
+            for (let x = 0; x < frameN; x++) {
               const rBit = rQr.modules.get(x, y);
               const gBit = gQr.modules.get(x, y);
               const bBit = bQr.modules.get(x, y);
@@ -427,11 +445,11 @@ export default function App() {
               const bVal = bBit ? 0 : 255;
 
               tempCtx.fillStyle = `rgb(${rVal}, ${gVal}, ${bVal})`;
-              tempCtx.fillRect(margin + x * cellSize, margin + y * cellSize, cellSize, cellSize);
+              tempCtx.fillRect(margin + x * frameCellSize, margin + y * frameCellSize, frameCellSize, frameCellSize);
             }
           }
 
-          const imageData = tempCtx.getImageData(0, 0, sizePx, sizePx);
+          const imageData = tempCtx.getImageData(0, 0, frameSizePx, frameSizePx);
           cache.push({
             rPacket,
             gPacket,
@@ -456,62 +474,9 @@ export default function App() {
   const initWebWorker = () => {
     if (workerRef.current) return;
 
-    // Fast inline Web Worker code string
-    const workerCode = `
-      self.importScripts('https://unpkg.com/jsqr@1.4.0/dist/jsQR.js');
-
-      self.onmessage = function(e) {
-        try {
-          const { imgDataBuffer, w, h } = e.data;
-          const imgData = new Uint8ClampedArray(imgDataBuffer);
-          
-          const rData = new Uint8ClampedArray(w * h * 4);
-          const gData = new Uint8ClampedArray(w * h * 4);
-          const bData = new Uint8ClampedArray(w * h * 4);
-
-          for (let i = 0; i < w * h; i++) {
-            const idx = i * 4;
-            const r = imgData[idx];
-            const g = imgData[idx + 1];
-            const b = imgData[idx + 2];
-            const a = imgData[idx + 3];
-
-            // Cross-talk compensation (subtract overlapping leakage from other channels)
-            let rClean = r - 0.4 * Math.max(0, g - r) - 0.4 * Math.max(0, b - r);
-            if (rClean < 0) rClean = 0; else if (rClean > 255) rClean = 255;
-
-            let gClean = g - 0.4 * Math.max(0, r - g) - 0.4 * Math.max(0, b - g);
-            if (gClean < 0) gClean = 0; else if (gClean > 255) gClean = 255;
-
-            let bClean = b - 0.4 * Math.max(0, r - b) - 0.4 * Math.max(0, g - b);
-            if (bClean < 0) bClean = 0; else if (bClean > 255) bClean = 255;
-
-            // Red Channel Monochromatic map
-            rData[idx] = rClean; rData[idx+1] = rClean; rData[idx+2] = rClean; rData[idx+3] = a;
-            // Green Channel Monochromatic map
-            gData[idx] = gClean; gData[idx+1] = gClean; gData[idx+2] = gClean; gData[idx+3] = a;
-            // Blue Channel Monochromatic map
-            bData[idx] = bClean; bData[idx+1] = bClean; bData[idx+2] = bClean; bData[idx+3] = a;
-          }
-
-          const rScan = jsQR(rData, w, h);
-          const gScan = jsQR(gData, w, h);
-          const bScan = jsQR(bData, w, h);
-
-          self.postMessage({
-            rPayload: rScan ? rScan.data : null,
-            gPayload: gScan ? gScan.data : null,
-            bPayload: bScan ? bScan.data : null
-          });
-        } catch (err) {
-          self.postMessage({ error: err.message });
-        }
-      };
-    `;
-
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const worker = new Worker(workerUrl);
+    const worker = new Worker(new URL('./scanner.worker.ts', import.meta.url), {
+      type: 'module',
+    });
 
     worker.onmessage = (e: MessageEvent) => {
       isWorkerBusyRef.current = false;
@@ -527,9 +492,9 @@ export default function App() {
   };
 
   const handleDecodedPayloads = (
-    rPayload: string | null,
-    gPayload: string | null,
-    bPayload: string | null
+    rPayload: Uint8Array | string | null,
+    gPayload: Uint8Array | string | null,
+    bPayload: Uint8Array | string | null
   ) => {
     const scannedPackets: FountainPacket[] = [];
     if (rPayload) {
@@ -705,10 +670,10 @@ export default function App() {
       sendMetadata.blockSize
     );
 
-    // Serialize to Base64
-    const rStr = ProtocolService.serializePacket(rPacket);
-    const gStr = ProtocolService.serializePacket(gPacket);
-    const bStr = ProtocolService.serializePacket(bPacket);
+    // Serialize to binary Uint8Array
+    const rBuf = ProtocolService.serializePacket(rPacket);
+    const gBuf = ProtocolService.serializePacket(gPacket);
+    const bBuf = ProtocolService.serializePacket(bPacket);
 
     // Generate standard base QR matrices
     const qrConfig = getQrConfigForBlockSize(sendMetadata.blockSize);
@@ -716,10 +681,10 @@ export default function App() {
     const ecc = qrConfig.errorCorrectionLevel;
 
     try {
-      // Using QRCode.create to extract matrices
-      const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
-      const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
-      const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
+      // Using QRCode.create with binary mode
+      const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+      const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+      const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
 
       const n = rQr.modules.size;
       const cellSize = n < 50 ? 14 : n < 100 ? 10 : 8;
@@ -1221,16 +1186,19 @@ export default function App() {
               const bScan = jsQR(bData, w, h);
 
               const parsedPackets: FountainPacket[] = [];
-              if (rScan?.data) {
-                const p = ProtocolService.deserializePacket(rScan.data);
+              if (rScan) {
+                const payload = rScan.binaryData ? new Uint8Array(rScan.binaryData) : rScan.data;
+                const p = ProtocolService.deserializePacket(payload);
                 if (p) parsedPackets.push(p);
               }
-              if (gScan?.data) {
-                const p = ProtocolService.deserializePacket(gScan.data);
+              if (gScan) {
+                const payload = gScan.binaryData ? new Uint8Array(gScan.binaryData) : gScan.data;
+                const p = ProtocolService.deserializePacket(payload);
                 if (p) parsedPackets.push(p);
               }
-              if (bScan?.data) {
-                const p = ProtocolService.deserializePacket(bScan.data);
+              if (bScan) {
+                const payload = bScan.binaryData ? new Uint8Array(bScan.binaryData) : bScan.data;
+                const p = ProtocolService.deserializePacket(payload);
                 if (p) parsedPackets.push(p);
               }
 

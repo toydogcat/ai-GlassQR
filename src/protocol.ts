@@ -90,7 +90,6 @@ export interface QrConfig {
 
 export function getQrConfigForBlockSize(blockSize: number): QrConfig {
   const totalBytes = 20 + blockSize;
-  const base64Len = Math.ceil(totalBytes * 4 / 3);
 
   // Exact maximum byte capacities for Level M (versions 1 to 40)
   const capacitiesM = [
@@ -102,14 +101,14 @@ export function getQrConfigForBlockSize(blockSize: number): QrConfig {
   ];
 
   for (let version = 1; version <= 40; version++) {
-    if (base64Len <= capacitiesM[version]) {
+    if (totalBytes <= capacitiesM[version]) {
       return { version, errorCorrectionLevel: 'M' };
     }
   }
 
   // If it exceeds Level M version 40, fallback to Level L
   // Version 40 Level L capacity is 2953 bytes
-  if (base64Len <= 2953) {
+  if (totalBytes <= 2953) {
     return { version: 40, errorCorrectionLevel: 'L' };
   }
 
@@ -190,9 +189,9 @@ export class ProtocolService {
   }
 
   /**
-   * Serialize FountainPacket into a compact Base64 string for QR code
+   * Serialize FountainPacket into a compact Uint8Array for QR code
    */
-  static serializePacket(packet: FountainPacket): string {
+  static serializePacket(packet: FountainPacket): Uint8Array {
     const headerSize = 20;
     const buffer = new Uint8Array(headerSize + packet.payload.length);
 
@@ -215,16 +214,24 @@ export class ProtocolService {
     // Payload
     buffer.set(packet.payload, headerSize);
 
-    return uint8ArrayToBase64(buffer);
+    return buffer;
   }
 
   /**
-   * Deserializes a Base64 QR string back into a FountainPacket.
+   * Deserializes a string or Uint8Array/Uint8ClampedArray back into a FountainPacket.
    * Returns null if signature is invalid or checksum mismatches.
    */
-  static deserializePacket(encoded: string): FountainPacket | null {
+  static deserializePacket(encoded: string | Uint8Array | Uint8ClampedArray): FountainPacket | null {
     try {
-      const buffer = base64ToUint8Array(encoded);
+      let buffer: Uint8Array;
+      if (typeof encoded === 'string') {
+        buffer = base64ToUint8Array(encoded);
+      } else if (encoded instanceof Uint8Array) {
+        buffer = encoded;
+      } else {
+        buffer = new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
+      }
+
       if (buffer.length < 20) return null;
 
       // Match magic signature 'GQR'
