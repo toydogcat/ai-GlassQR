@@ -722,8 +722,8 @@ export default function App() {
       const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
 
       const n = rQr.modules.size;
-      const cellSize = 6; // Standard size per module
-      const margin = 24; // Visual border margin
+      const cellSize = n < 50 ? 14 : n < 100 ? 10 : 8;
+      const margin = 32;
       const sizePx = n * cellSize + margin * 2;
 
       const canvas = transmitCanvasRef.current;
