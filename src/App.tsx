@@ -51,6 +51,7 @@ export default function App() {
   const [isTransmitting, setIsTransmitting] = useState<boolean>(false);
   const [transmitFps, setTransmitFps] = useState<number>(25);
   const [selectedBlockSize, setSelectedBlockSize] = useState<number>(256);
+  const [transmitMode, setTransmitMode] = useState<'color' | 'monochrome'>('color');
   const [preRenderingPercent, setPreRenderingPercent] = useState<number>(-1);
 
   // Buffer lists for exporting Animated WebPs
@@ -230,11 +231,16 @@ export default function App() {
 
   // Pre-render a sliding window queue (e.g. initial 60 frames) upfront to keep UI silky smooth on selection start,
   // then dynamically refill in the background during transmission.
-  const preRenderTransmitterFrames = async (meta: FileMetadata, blocks: Uint8Array[]) => {
+  const preRenderTransmitterFrames = async (
+    meta: FileMetadata,
+    blocks: Uint8Array[],
+    modeOverride?: 'color' | 'monochrome'
+  ) => {
     setPreRenderingPercent(0);
     const cache: PreRenderedFrame[] = [];
     const maxFrames = 60; // Initial pre-render buffer size of 60 frames (2.4 seconds at 25 FPS)
 
+    const activeMode = modeOverride !== undefined ? modeOverride : transmitMode;
     nextFrameSeqRef.current = 0;
 
     const qrConfig = getQrConfigForBlockSize(meta.blockSize);
@@ -268,9 +274,16 @@ export default function App() {
     for (let i = 0; i < maxFrames; i += batchSize) {
       const end = Math.min(i + batchSize, maxFrames);
       for (let frameIndex = i; frameIndex < end; frameIndex++) {
-        const rSeq = frameIndex * 3;
-        const gSeq = frameIndex * 3 + 1;
-        const bSeq = frameIndex * 3 + 2;
+        let rSeq, gSeq, bSeq;
+        if (activeMode === 'monochrome') {
+          rSeq = frameIndex;
+          gSeq = frameIndex;
+          bSeq = frameIndex;
+        } else {
+          rSeq = frameIndex * 3;
+          gSeq = frameIndex * 3 + 1;
+          bSeq = frameIndex * 3 + 2;
+        }
 
         const rPacket = ProtocolService.generatePacket(meta.id, rSeq, blocks, meta.size, meta.blockSize);
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
@@ -376,9 +389,16 @@ export default function App() {
         const frameIndex = nextFrameSeqRef.current;
         nextFrameSeqRef.current += 1;
 
-        const rSeq = frameIndex * 3;
-        const gSeq = frameIndex * 3 + 1;
-        const bSeq = frameIndex * 3 + 2;
+        let rSeq, gSeq, bSeq;
+        if (transmitMode === 'monochrome') {
+          rSeq = frameIndex;
+          gSeq = frameIndex;
+          bSeq = frameIndex;
+        } else {
+          rSeq = frameIndex * 3;
+          gSeq = frameIndex * 3 + 1;
+          bSeq = frameIndex * 3 + 2;
+        }
 
         const rPacket = ProtocolService.generatePacket(meta.id, rSeq, blocks, meta.size, meta.blockSize);
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
@@ -588,13 +608,18 @@ export default function App() {
     loadSendFile(file);
   };
 
-  const loadSendFile = async (file: File, blockSizeOverride?: number) => {
+  const loadSendFile = async (
+    file: File,
+    blockSizeOverride?: number,
+    modeOverride?: 'color' | 'monochrome'
+  ) => {
     setSendFile(file);
     const arrayBuffer = await file.arrayBuffer();
     const fileBytes = new Uint8Array(arrayBuffer);
 
     const size = fileBytes.length;
     const activeBlockSize = blockSizeOverride !== undefined ? blockSizeOverride : selectedBlockSize;
+    const activeMode = modeOverride !== undefined ? modeOverride : transmitMode;
     const blocksList = ProtocolService.sliceFile(fileBytes, activeBlockSize);
 
     const meta: FileMetadata = {
@@ -609,6 +634,11 @@ export default function App() {
     setSendMetadata(meta);
     setSendBlocks(blocksList);
     setSendSeq(0);
+    if (activeMode === 'monochrome') {
+      channelSeqRef.current = { r: 0, g: 0, b: 0 };
+    } else {
+      channelSeqRef.current = { r: 0, g: 1, b: 2 };
+    }
     setRecordedFrames([]);
     setIsTransmitting(false);
 
@@ -618,7 +648,7 @@ export default function App() {
     }
 
     // Run custom pre-rendering queue asynchronously
-    await preRenderTransmitterFrames(meta, blocksList);
+    await preRenderTransmitterFrames(meta, blocksList, activeMode);
   };
 
   const changeBlockSize = (size: number) => {
@@ -626,6 +656,13 @@ export default function App() {
     if (sendFile) {
       // Re-slice and reset file with new block size
       loadSendFile(sendFile, size);
+    }
+  };
+
+  const changeTransmitMode = (mode: 'color' | 'monochrome') => {
+    setTransmitMode(mode);
+    if (sendFile) {
+      loadSendFile(sendFile, selectedBlockSize, mode);
     }
   };
 
@@ -653,14 +690,14 @@ export default function App() {
       sendMetadata.size,
       sendMetadata.blockSize
     );
-    const gPacket = ProtocolService.generatePacket(
+    const gPacket = (transmitMode === 'monochrome') ? rPacket : ProtocolService.generatePacket(
       sendMetadata.id,
       gSeq,
       sendBlocks,
       sendMetadata.size,
       sendMetadata.blockSize
     );
-    const bPacket = ProtocolService.generatePacket(
+    const bPacket = (transmitMode === 'monochrome') ? rPacket : ProtocolService.generatePacket(
       sendMetadata.id,
       bSeq,
       sendBlocks,
@@ -726,10 +763,17 @@ export default function App() {
       }
 
       // Progressively update channel index pointers
-      channelSeqRef.current.r = rSeq + 3;
-      channelSeqRef.current.g = gSeq + 3;
-      channelSeqRef.current.b = bSeq + 3;
-      setSendSeq((prev) => prev + 3);
+      if (transmitMode === 'monochrome') {
+        channelSeqRef.current.r = rSeq + 1;
+        channelSeqRef.current.g = gSeq + 1;
+        channelSeqRef.current.b = bSeq + 1;
+        setSendSeq((prev) => prev + 1);
+      } else {
+        channelSeqRef.current.r = rSeq + 3;
+        channelSeqRef.current.g = gSeq + 3;
+        channelSeqRef.current.b = bSeq + 3;
+        setSendSeq((prev) => prev + 3);
+      }
 
       // Extract raw frame buffer if exporting WebP matches active recorder
       let webpBytes: Uint8Array | null = null;
@@ -869,7 +913,11 @@ export default function App() {
     playRefIndex.current = 0;
     nextFrameSeqRef.current = 0;
     preRenderedFramesRef.current = [];
-    channelSeqRef.current = { r: 0, g: 1, b: 2 };
+    if (transmitMode === 'monochrome') {
+      channelSeqRef.current = { r: 0, g: 0, b: 0 };
+    } else {
+      channelSeqRef.current = { r: 0, g: 1, b: 2 };
+    }
     setRecordedFrames([]);
     // Clear canvas
     const canvas = transmitCanvasRef.current;
@@ -1398,6 +1446,35 @@ export default function App() {
                 <div className="border-t border-slate-900 pt-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5 text-slate-400" />
+                      傳輸模式
+                    </span>
+                    <div className="flex gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => changeTransmitMode('color')}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                          transmitMode === 'color'
+                            ? 'bg-teal-500/20 text-teal-300 ring-1 ring-teal-500/30'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        彩色 (高頻寬)
+                      </button>
+                      <button
+                        onClick={() => changeTransmitMode('monochrome')}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                          transmitMode === 'monochrome'
+                            ? 'bg-teal-500/20 text-teal-300 ring-1 ring-teal-500/30'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        黑白 (高相容)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
                       <Sliders className="w-3.5 h-3.5 text-slate-400" />
                       區塊大小
                     </span>
@@ -1424,7 +1501,7 @@ export default function App() {
                         <Activity className="w-3.5 h-3.5" />
                         傳輸速度: <b className="text-teal-400 font-bold">{transmitFps} FPS</b>
                       </span>
-                      <span>(~{Math.round(((transmitFps * selectedBlockSize * 3) / 1024) * 10) / 10} KB/s)</span>
+                      <span>(~{Math.round(((transmitFps * selectedBlockSize * (transmitMode === 'monochrome' ? 1 : 3)) / 1024) * 10) / 10} KB/s)</span>
                     </div>
                     <input
                       type="range"
