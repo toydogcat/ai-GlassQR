@@ -1,2 +1,2 @@
 # ai-GlassQR
-GlassQR Optical Transmission System.
+[GlassQR](https://toydogcat.github.io/ai-GlassQR/) Optical Transmission System.
