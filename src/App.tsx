@@ -61,7 +61,7 @@ export default function App() {
   // --- Receiver (Scan) States ---
   const [solver, setSolver] = useState<FountainSolver | null>(null);
   const [receiveMetadata, setReceiveMetadata] = useState<FileMetadata | null>(null);
-  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [, setIsScanning] = useState<boolean>(false);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isDemuxing, setIsDemuxing] = useState<boolean>(false);
 
@@ -96,6 +96,11 @@ export default function App() {
   const playRefIndex = useRef<number>(0);
   const workerRef = useRef<Worker | null>(null);
   const isWorkerBusyRef = useRef<boolean>(false);
+
+  // Mirror refs to avoid stale closures in requestAnimationFrame / Web Worker callbacks
+  const isScanningRef = useRef<boolean>(false);
+  const cameraActiveRef = useRef<boolean>(false);
+  const solverRef = useRef<FountainSolver | null>(null);
 
   // Interval IDs
   const transmitIntervalRef = useRef<any>(null);
@@ -478,6 +483,8 @@ export default function App() {
       type: 'module',
     });
 
+    // NOTE: This onmessage handler is set once and never re-registered.
+    // It MUST use refs (not state) to avoid stale closure bugs.
     worker.onmessage = (e: MessageEvent) => {
       isWorkerBusyRef.current = false;
       if (e.data.error) {
@@ -485,13 +492,14 @@ export default function App() {
         return;
       }
       const { rPayload, gPayload, bPayload } = e.data;
-      handleDecodedPayloads(rPayload, gPayload, bPayload);
+      handleDecodedPayloadsViaRef(rPayload, gPayload, bPayload);
     };
 
     workerRef.current = worker;
   };
 
-  const handleDecodedPayloads = (
+  // Use ref-based solver access to avoid stale closure in worker callback
+  const handleDecodedPayloadsViaRef = (
     rPayload: string | null,
     gPayload: string | null,
     bPayload: string | null
@@ -511,10 +519,11 @@ export default function App() {
     }
 
     // Accumulate decoded packets indicator count
-    frameCountRef.current += 3;
+    frameCountRef.current += 1;
 
     if (scannedPackets.length > 0) {
-      let currentSolver = solver;
+      // Use ref to get the LATEST solver, not a stale closure capture
+      let currentSolver = solverRef.current;
       if (!currentSolver || currentSolver.fileId !== scannedPackets[0].fileId) {
         const meta: FileMetadata = {
           id: scannedPackets[0].fileId,
@@ -544,15 +553,22 @@ export default function App() {
       }
 
       if (solvedAny) {
+        // Update both state AND ref so next callback sees latest solver
+        solverRef.current = currentSolver;
         setSolver(currentSolver);
         setScannedCount(currentSolver.solvedCount);
         setReceiveHistory([...currentSolver.solvedBlocks.map((b) => b !== null)]);
 
         if (currentSolver.isSolved()) {
+          isScanningRef.current = false;
           setIsScanning(false);
           stopCamera();
           handleDecodeSuccess(currentSolver);
         }
+      } else {
+        // Even if no new blocks solved, persist solver ref for continuity
+        solverRef.current = currentSolver;
+        setSolver(currentSolver);
       }
     }
   };
@@ -966,10 +982,12 @@ export default function App() {
   };
 
   // Core scan loop: process camera frame extraction & decode via offscreen Web Worker
+  // IMPORTANT: Uses refs instead of state to avoid stale closures in requestAnimationFrame loop
   const processFrameDecode = () => {
     const video = videoRef.current;
     const canvas = receiveCanvasRef.current;
-    if (!video || !canvas || !cameraActive || !isScanning) return;
+    // Use REFS not state - state values are stale in the rAF closure!
+    if (!video || !canvas || !cameraActiveRef.current || !isScanningRef.current) return;
 
     // Canvas size holds standard capture resolution
     if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
@@ -998,7 +1016,8 @@ export default function App() {
       }, [imgData.data.buffer]);
     }
 
-    if (isScanning && cameraActive) {
+    // Use REFS to check loop continuation
+    if (isScanningRef.current && cameraActiveRef.current) {
       requestAnimationFrame(processFrameDecode);
     }
   };
@@ -1006,8 +1025,11 @@ export default function App() {
   // Start Camera WebRTC
   const startCamera = async () => {
     try {
+      // Set BOTH state AND refs so the scanning loop works immediately
       setCameraActive(true);
       setIsScanning(true);
+      cameraActiveRef.current = true;
+      isScanningRef.current = true;
       
       // Initialize the Web Worker!
       initWebWorker();
@@ -1047,12 +1069,17 @@ export default function App() {
       alert('無法啟動網路相機: ' + err);
       setCameraActive(false);
       setIsScanning(false);
+      cameraActiveRef.current = false;
+      isScanningRef.current = false;
     }
   };
 
   const stopCamera = () => {
+    // Update BOTH state AND refs
     setIsScanning(false);
     setCameraActive(false);
+    isScanningRef.current = false;
+    cameraActiveRef.current = false;
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach((track) => track.stop());
@@ -1165,19 +1192,10 @@ export default function App() {
                 const b = imgData.data[idx + 2];
                 const a = imgData.data[idx + 3];
 
-                // Cross-talk compensation (subtract overlapping leakage from other channels)
-                let rClean = r - 0.4 * Math.max(0, g - r) - 0.4 * Math.max(0, b - r);
-                if (rClean < 0) rClean = 0; else if (rClean > 255) rClean = 255;
-
-                let gClean = g - 0.4 * Math.max(0, r - g) - 0.4 * Math.max(0, b - g);
-                if (gClean < 0) gClean = 0; else if (gClean > 255) gClean = 255;
-
-                let bClean = b - 0.4 * Math.max(0, r - b) - 0.4 * Math.max(0, g - b);
-                if (bClean < 0) bClean = 0; else if (bClean > 255) bClean = 255;
-
-                rData[idx] = rClean; rData[idx+1] = rClean; rData[idx+2] = rClean; rData[idx+3] = a;
-                gData[idx] = gClean; gData[idx+1] = gClean; gData[idx+2] = gClean; gData[idx+3] = a;
-                bData[idx] = bClean; bData[idx+1] = bClean; bData[idx+2] = bClean; bData[idx+3] = a;
+                // Simple per-channel monochromatic separation (matching worker logic)
+                rData[idx] = r; rData[idx+1] = r; rData[idx+2] = r; rData[idx+3] = a;
+                gData[idx] = g; gData[idx+1] = g; gData[idx+2] = g; gData[idx+3] = a;
+                bData[idx] = b; bData[idx+1] = b; bData[idx+2] = b; bData[idx+3] = a;
               }
 
               // Scan
@@ -1444,7 +1462,7 @@ export default function App() {
                       區塊大小
                     </span>
                     <div className="flex gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
-                      {[128, 256, 512, 1024, 1536].map((size) => (
+                      {[32, 64, 128, 256, 512, 1024].map((size) => (
                         <button
                           key={size}
                           onClick={() => changeBlockSize(size)}
@@ -1503,7 +1521,7 @@ export default function App() {
                   <div className="absolute -inset-1 bg-gradient-to-tr from-teal-500 to-indigo-500 rounded-2xl opacity-10 blur-xl group-hover:opacity-15 transition" />
                   <canvas
                     ref={transmitCanvasRef}
-                    className="max-w-[280px] w-full h-auto bg-slate-900 rounded-lg aspect-square border border-slate-800"
+                    className="max-w-[480px] w-full h-auto bg-slate-900 rounded-lg aspect-square border border-slate-800"
                     id="transmit-optical-canvas"
                   />
                   {!isTransmitting && (
