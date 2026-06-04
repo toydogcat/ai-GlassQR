@@ -90,28 +90,27 @@ export interface QrConfig {
 
 export function getQrConfigForBlockSize(blockSize: number): QrConfig {
   const totalBytes = 20 + blockSize;
+  const base64Len = Math.ceil(totalBytes * 4 / 3);
 
-  // Exact maximum byte capacities for Level M (versions 1 to 40)
-  const capacitiesM = [
-    0, // 0 index
-    14, 26, 42, 62, 84, 106, 122, 152, 180, 213, // 1-10
-    251, 287, 331, 362, 412, 450, 504, 560, 624, 664, // 11-20
-    732, 772, 824, 872, 924, 980, 1040, 1104, 1172, 1244, // 21-30
-    1320, 1400, 1484, 1572, 1664, 1760, 1860, 1964, 2072, 2184 // 31-40
-  ];
-
-  for (let version = 1; version <= 40; version++) {
-    if (totalBytes <= capacitiesM[version]) {
-      return { version, errorCorrectionLevel: 'M' };
-    }
-  }
-
-  // If it exceeds Level M version 40, fallback to Level L
-  // Version 40 Level L capacity is 2953 bytes
-  if (totalBytes <= 2953) {
-    return { version: 40, errorCorrectionLevel: 'L' };
-  }
-
+  // We map base64Len to version and errorCorrectionLevel
+  if (base64Len <= 150) return { version: 7, errorCorrectionLevel: 'M' };
+  if (base64Len <= 260) return { version: 11, errorCorrectionLevel: 'M' };
+  if (base64Len <= 370) return { version: 14, errorCorrectionLevel: 'M' };
+  if (base64Len <= 500) return { version: 18, errorCorrectionLevel: 'M' };
+  if (base64Len <= 650) return { version: 21, errorCorrectionLevel: 'M' };
+  if (base64Len <= 800) return { version: 24, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1000) return { version: 28, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1140) return { version: 31, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1260) return { version: 33, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1380) return { version: 35, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1460) return { version: 36, errorCorrectionLevel: 'M' };
+  if (base64Len <= 1640) return { version: 40, errorCorrectionLevel: 'M' };
+  
+  // For larger block sizes, the payload base64 length exceeds the 'M' capacity of version 40 (1663 bytes).
+  // Under 'L' error correction (Low - 7% error correction), the maximum byte capacity of version 40 is 2953 bytes,
+  // which can easily fit block sizes up to 1536 bytes (base64Len = 2075).
+  if (base64Len <= 2200) return { version: 40, errorCorrectionLevel: 'L' };
+  
   return { version: 40, errorCorrectionLevel: 'L' };
 }
 
@@ -189,9 +188,9 @@ export class ProtocolService {
   }
 
   /**
-   * Serialize FountainPacket into a compact Uint8Array for QR code
+   * Serialize FountainPacket into a compact Base64 string for QR code
    */
-  static serializePacket(packet: FountainPacket): Uint8Array {
+  static serializePacket(packet: FountainPacket): string {
     const headerSize = 20;
     const buffer = new Uint8Array(headerSize + packet.payload.length);
 
@@ -214,24 +213,16 @@ export class ProtocolService {
     // Payload
     buffer.set(packet.payload, headerSize);
 
-    return buffer;
+    return uint8ArrayToBase64(buffer);
   }
 
   /**
-   * Deserializes a string or Uint8Array/Uint8ClampedArray back into a FountainPacket.
+   * Deserializes a Base64 QR string back into a FountainPacket.
    * Returns null if signature is invalid or checksum mismatches.
    */
-  static deserializePacket(encoded: string | Uint8Array | Uint8ClampedArray): FountainPacket | null {
+  static deserializePacket(encoded: string): FountainPacket | null {
     try {
-      let buffer: Uint8Array;
-      if (typeof encoded === 'string') {
-        buffer = base64ToUint8Array(encoded);
-      } else if (encoded instanceof Uint8Array) {
-        buffer = encoded;
-      } else {
-        buffer = new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength);
-      }
-
+      const buffer = base64ToUint8Array(encoded);
       if (buffer.length < 20) return null;
 
       // Match magic signature 'GQR'

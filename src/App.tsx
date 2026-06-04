@@ -249,10 +249,10 @@ export default function App() {
     
     // Auto-adjust cellSize so that each cell/module has a larger physical pixel area!
     const dummyPacket = ProtocolService.generatePacket(meta.id, 0, blocks, meta.size, meta.blockSize);
-    const dummyBuf = ProtocolService.serializePacket(dummyPacket);
+    const dummyStr = ProtocolService.serializePacket(dummyPacket);
     let n = 157; // Default fallback module dimension for version 35
     try {
-      const dummyQr = QRCode.create([{ data: dummyBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+      const dummyQr = QRCode.create(dummyStr, { version: qrVersion, errorCorrectionLevel: ecc });
       n = dummyQr.modules.size;
     } catch (e) {
       console.warn("Failed to derive module size:", e);
@@ -289,14 +289,14 @@ export default function App() {
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
         const bPacket = ProtocolService.generatePacket(meta.id, bSeq, blocks, meta.size, meta.blockSize);
 
-        const rBuf = ProtocolService.serializePacket(rPacket);
-        const gBuf = ProtocolService.serializePacket(gPacket);
-        const bBuf = ProtocolService.serializePacket(bPacket);
+        const rStr = ProtocolService.serializePacket(rPacket);
+        const gStr = ProtocolService.serializePacket(gPacket);
+        const bStr = ProtocolService.serializePacket(bPacket);
 
         try {
-          const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-          const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-          const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
 
           const frameN = rQr.modules.size;
           const frameCellSize = frameN < 50 ? 14 : frameN < 100 ? 10 : 8;
@@ -372,10 +372,10 @@ export default function App() {
       const ecc = qrConfig.errorCorrectionLevel;
 
       const dummyPacket = ProtocolService.generatePacket(meta.id, 0, blocks, meta.size, meta.blockSize);
-      const dummyBuf = ProtocolService.serializePacket(dummyPacket);
+      const dummyStr = ProtocolService.serializePacket(dummyPacket);
       let n = 157;
       try {
-        const dummyQr = QRCode.create([{ data: dummyBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+        const dummyQr = QRCode.create(dummyStr, { version: qrVersion, errorCorrectionLevel: ecc });
         n = dummyQr.modules.size;
       } catch (e) {
         console.warn("Failed to derive module size in background:", e);
@@ -413,14 +413,14 @@ export default function App() {
         const gPacket = ProtocolService.generatePacket(meta.id, gSeq, blocks, meta.size, meta.blockSize);
         const bPacket = ProtocolService.generatePacket(meta.id, bSeq, blocks, meta.size, meta.blockSize);
 
-        const rBuf = ProtocolService.serializePacket(rPacket);
-        const gBuf = ProtocolService.serializePacket(gPacket);
-        const bBuf = ProtocolService.serializePacket(bPacket);
+        const rStr = ProtocolService.serializePacket(rPacket);
+        const gStr = ProtocolService.serializePacket(gPacket);
+        const bStr = ProtocolService.serializePacket(bPacket);
 
         try {
-          const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-          const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-          const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+          const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
+          const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
 
           const frameN = rQr.modules.size;
           const frameCellSize = frameN < 50 ? 14 : frameN < 100 ? 10 : 8;
@@ -492,9 +492,9 @@ export default function App() {
   };
 
   const handleDecodedPayloads = (
-    rPayload: Uint8Array | string | null,
-    gPayload: Uint8Array | string | null,
-    bPayload: Uint8Array | string | null
+    rPayload: string | null,
+    gPayload: string | null,
+    bPayload: string | null
   ) => {
     const scannedPackets: FountainPacket[] = [];
     if (rPayload) {
@@ -670,10 +670,10 @@ export default function App() {
       sendMetadata.blockSize
     );
 
-    // Serialize to binary Uint8Array
-    const rBuf = ProtocolService.serializePacket(rPacket);
-    const gBuf = ProtocolService.serializePacket(gPacket);
-    const bBuf = ProtocolService.serializePacket(bPacket);
+    // Serialize to Base64
+    const rStr = ProtocolService.serializePacket(rPacket);
+    const gStr = ProtocolService.serializePacket(gPacket);
+    const bStr = ProtocolService.serializePacket(bPacket);
 
     // Generate standard base QR matrices
     const qrConfig = getQrConfigForBlockSize(sendMetadata.blockSize);
@@ -681,10 +681,10 @@ export default function App() {
     const ecc = qrConfig.errorCorrectionLevel;
 
     try {
-      // Using QRCode.create with binary mode
-      const rQr = QRCode.create([{ data: rBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-      const gQr = QRCode.create([{ data: gBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
-      const bQr = QRCode.create([{ data: bBuf, mode: 'byte' }], { version: qrVersion, errorCorrectionLevel: ecc });
+      // Using QRCode.create to extract matrices
+      const rQr = QRCode.create(rStr, { version: qrVersion, errorCorrectionLevel: ecc });
+      const gQr = QRCode.create(gStr, { version: qrVersion, errorCorrectionLevel: ecc });
+      const bQr = QRCode.create(bStr, { version: qrVersion, errorCorrectionLevel: ecc });
 
       const n = rQr.modules.size;
       const cellSize = n < 50 ? 14 : n < 100 ? 10 : 8;
@@ -1186,19 +1186,16 @@ export default function App() {
               const bScan = jsQR(bData, w, h);
 
               const parsedPackets: FountainPacket[] = [];
-              if (rScan) {
-                const payload = rScan.binaryData ? new Uint8Array(rScan.binaryData) : rScan.data;
-                const p = ProtocolService.deserializePacket(payload);
+              if (rScan && rScan.data) {
+                const p = ProtocolService.deserializePacket(rScan.data);
                 if (p) parsedPackets.push(p);
               }
-              if (gScan) {
-                const payload = gScan.binaryData ? new Uint8Array(gScan.binaryData) : gScan.data;
-                const p = ProtocolService.deserializePacket(payload);
+              if (gScan && gScan.data) {
+                const p = ProtocolService.deserializePacket(gScan.data);
                 if (p) parsedPackets.push(p);
               }
-              if (bScan) {
-                const payload = bScan.binaryData ? new Uint8Array(bScan.binaryData) : bScan.data;
-                const p = ProtocolService.deserializePacket(payload);
+              if (bScan && bScan.data) {
+                const p = ProtocolService.deserializePacket(bScan.data);
                 if (p) parsedPackets.push(p);
               }
 

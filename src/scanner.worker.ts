@@ -5,29 +5,12 @@
 
 import jsQR from 'jsqr';
 
-function isValidPacket(buffer: Uint8Array): boolean {
-  if (!buffer || buffer.length < 20) return false;
-  if (buffer[0] !== 71 || buffer[1] !== 81 || buffer[2] !== 82) return false; // 'GQR'
-  
-  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  const checksum = view.getUint16(18, true);
-  const payload = buffer.subarray(20);
-  
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < payload.length; i++) {
-    hash ^= payload[i];
-    hash = (hash * 0x01000193) >>> 0;
-  }
-  const calcChecksum = ((hash ^ (hash >>> 16)) & 0xffff);
-  return calcChecksum === checksum;
-}
-
 self.onmessage = function (e) {
   try {
     const { imgDataBuffer, w, h } = e.data;
     const imgData = new Uint8ClampedArray(imgDataBuffer);
     
-    // 1. Grayscale First
+    // 1. Grayscale First (for monochrome mode)
     const grayData = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < w * h; i++) {
       const idx = i * 4;
@@ -44,19 +27,20 @@ self.onmessage = function (e) {
     }
     
     const grayScan = jsQR(grayData, w, h);
-    if (grayScan && grayScan.binaryData) {
-      const grayBytes = new Uint8Array(grayScan.binaryData);
-      if (isValidPacket(grayBytes)) {
+    if (grayScan && grayScan.data) {
+      // Validate this looks like a Base64 GQR packet before using grayscale shortcut
+      const grayStr = grayScan.data;
+      if (grayStr.length > 20) {
         self.postMessage({
-          rPayload: grayBytes,
-          gPayload: grayBytes,
-          bPayload: grayBytes,
+          rPayload: grayStr,
+          gPayload: grayStr,
+          bPayload: grayStr,
         });
         return;
       }
     }
     
-    // 2. Fallback to Color Cross-talk compensation
+    // 2. Fallback to per-channel separation for color mode
     const rData = new Uint8ClampedArray(w * h * 4);
     const gData = new Uint8ClampedArray(w * h * 4);
     const bData = new Uint8ClampedArray(w * h * 4);
@@ -68,32 +52,22 @@ self.onmessage = function (e) {
       const b = imgData[idx + 2];
       const a = imgData[idx + 3];
 
-      let rClean = r - 0.4 * Math.max(0, g - r) - 0.4 * Math.max(0, b - r);
-      if (rClean < 0) rClean = 0; else if (rClean > 255) rClean = 255;
-
-      let gClean = g - 0.4 * Math.max(0, r - g) - 0.4 * Math.max(0, b - g);
-      if (gClean < 0) gClean = 0; else if (gClean > 255) gClean = 255;
-
-      let bClean = b - 0.4 * Math.max(0, r - b) - 0.4 * Math.max(0, g - b);
-      if (bClean < 0) bClean = 0; else if (bClean > 255) bClean = 255;
-
-      rData[idx] = rClean; rData[idx + 1] = rClean; rData[idx + 2] = rClean; rData[idx + 3] = a;
-      gData[idx] = gClean; gData[idx + 1] = gClean; gData[idx + 2] = gClean; gData[idx + 3] = a;
-      bData[idx] = bClean; bData[idx + 1] = bClean; bData[idx + 2] = bClean; bData[idx + 3] = a;
+      // Red Channel Monochromatic map
+      rData[idx] = r; rData[idx + 1] = r; rData[idx + 2] = r; rData[idx + 3] = a;
+      // Green Channel Monochromatic map
+      gData[idx] = g; gData[idx + 1] = g; gData[idx + 2] = g; gData[idx + 3] = a;
+      // Blue Channel Monochromatic map
+      bData[idx] = b; bData[idx + 1] = b; bData[idx + 2] = b; bData[idx + 3] = a;
     }
 
     const rScan = jsQR(rData, w, h);
     const gScan = jsQR(gData, w, h);
     const bScan = jsQR(bData, w, h);
 
-    const rBytes = rScan && rScan.binaryData ? new Uint8Array(rScan.binaryData) : null;
-    const gBytes = gScan && gScan.binaryData ? new Uint8Array(gScan.binaryData) : null;
-    const bBytes = bScan && bScan.binaryData ? new Uint8Array(bScan.binaryData) : null;
-
     self.postMessage({
-      rPayload: rBytes && isValidPacket(rBytes) ? rBytes : null,
-      gPayload: gBytes && isValidPacket(gBytes) ? gBytes : null,
-      bPayload: bBytes && isValidPacket(bBytes) ? bBytes : null,
+      rPayload: rScan ? rScan.data : null,
+      gPayload: gScan ? gScan.data : null,
+      bPayload: bScan ? bScan.data : null,
     });
   } catch (err: any) {
     self.postMessage({ error: err.message });
